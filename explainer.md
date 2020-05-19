@@ -211,126 +211,90 @@ provide a safe core architecture, and to be adequate on their own for
 solutions to scalability problems where network support for multicast is
 enabled, and for use cases where the achievable latency is acceptable.
 
-## Examples
+### Details
 
-### Basic Join, Sleep, Leave
-
-A pretty dumb receiver.  It joins, waits 20s, and leaves.  Any packets
-received are passed to the "processPackets" function.
+Here is an example that joins a multicast flow for 20 seconds.
 
 ```javascript
-var mrc = new MulticastReceiverConfig();
-mrc.source = '198.51.100.10';
-mrc.group = '232.10.10.1';
-mrc.port = 5001;
-mrc.dorms = 'dorms.example.com';
+// Multicast flow to join:
 
-var mr = new MulticastReceiver(mrc);
-// process any packets received
-mr.onmessage = function(evt) { processPackets(evt.data); }
+let multicastFlow = {
+  source: '198.51.100.10',
+  group: '232.10.10.1',
+  port: 5001,
+  dorms: 'dorms.example.com'
+};
+  
+// Construct MulticastReceiver and subscribe to the multicast flow on the 
+// network:
 
-// monitor other events, but do nothing with them.
-mr.onjoin = function(evt) { console.log('multicast receiver joined'); }
-mr.onleave = function(evt) { console.log('multicast receiver left'); }
-mr.onerror = function(evt) { console.log('multicast error: ' + evt.data); }
-mr.onloss = function(evt) { console.log('loss warning: ' + evt.data); }
+let multicastReceiver=new MulticastReceiver(multicastFlow);
 
-mr.join();
-setTimeout(function() { mr.leave(); }, 20000);
-```
+// Read multicast UDP packets:
 
-### Enhancement Layers
+let multicastReader=multicastReceiver.readable.getReader();
 
-Join a base flow and an enhancement layer.  On a loss warning from
-either, leave the enhancement layer and set a timer to rejoin in 10s.
-
-```javascript
-var mrc_base = new MulticastReceiverConfig();
-mrc_base.source = '198.51.100.10';
-mrc_base.group = '232.10.10.1';
-mrc_base.port = 5001;
-mrc_base.dorms = 'dorms.example.com';
-
-var mrc_enh = new MulticastReceiverConfig();
-mrc_enh.source = '198.51.100.10';
-mrc_enh.group = '232.10.10.2';
-mrc_enh.port = 5001;
-mrc_enh.dorms = 'dorms.example.com';
-
-var mr_base = new MulticastReceiver(mrc_base);
-var mr_enh = new MulticastReceiver(mrc_enh);
-
-// inserting my own variable
-mr_enh.my_joined = 0;
-
-mr_base.onmessage = function(evt) { processBase(evt.data); }
-mr_enh.onmessage = function(evt) { processEnhancement(evt.data); }
-
-mr_enh.onleave = function(evt) { mr_enh.my_joined = 0; }
-mr_enh.onerror = function(evt) { mr_enh.my_joined = 0; }
-
-function checked_join() {
-  if (check_bw_estimate_ok() && !mr_enh.my_joined) {
-    mr_enh.my_joined = 1;
-    mr_enh.join();
-  } else {
-    setTimeout(10000, checked_join);
+async function readMulticastData() {
+  for(;;) {
+    let { done, value } = await multicastReader.read();
+    if(done) {
+      return;
+    } else {
+      // value is an UInt8Array with the payload of one UDP packet.
+      console.log("Got multicast packet with size "+value.length);
+    }
   }
 }
 
-function onloss(evt) {
-  if (mr_enh.my_joined) {
-    mr_enh.myjoined = 0;
-    mr_enh.leave();
-    setTimeout(10000, checked_join);
-  }
-}
+readMulticastData().then( () => {
+  console.log("Cancel was called.");
+}).catch( error => {
+  console.log(error,"Error. Closecode is "+multicastReader.closecode);
+});
 
-mr_enh.onloss = onloss;
-mr_base.onloss = onloss;
+// Cancel after 20 seconds:
 
-mr_base.join();
-// leave time for bandwidth estimate, then join enhancement layer.
-setTimeout(10000, checked_join);
+setTimeout( () => {
+  console.log("Canceling multicast");
+  multicastReader.cancel();
+},20000);
 ```
 
-TBD: flesh out the packet access API.  In particular, explain support for
-[pathchirp](http://www.spin.rice.edu/Software/pathChirp/) and/or
-[pathrate](https://www.cc.gatech.edu/~dovrolis/bw-est/pathrate.html) to
-detect available path bandwidth, particularly for use in adding enhancement
-layers/upshifting bitrates.  (We intend to support this by having network
-rx timestamps given with the payloads as part of the API, so that apps can
-use various packet dispersion techniques in conjunction with send patterns
-known to the web app, in coordination with the sender.)
+The browser will try to join the multicast flow on the network as soon as MulticastReceiver is constructed. The browser will leave the multicast flow on the network whenever there is an event that will trigger either a) a promise returned by `read()` to be rejected or b) the `done` value to become true. After such an event, no more multicast data can be read from that MulticastReceiver. So if JavaScript wants to receive the same or another multicast flow later, it will need to construct a new MulticastReceiver.
 
-TBD: add examples of tunneling support/non-support.  This will be an
-app-controlled bool in the MulticastConfigReceiver that permits or denies
-establishing a unicast tunnel to a sender-known relay (via
-[DRIAD](https://tools.ietf.org/html/draft-ietf-mboned-driad-amt-discovery-08),
-or perhaps an equivalent via DORMS metadata) when multicast is not available
-through the local network.  The 2 use cases are: 1. the app knows how to
-fail over to unicast and retrieve the content with https when the local
-network cannot provide native multicast; or 2. the app is consuming
-something that is only available via multicast, and wants the payloads from
-this stream even if it means tunneling the multicast data over unicast.
+In case the promise returned by `read()` is rejected, it will be rejected with an informative text which may be useful for debugging and which is logged to the console in the example above. In addition to this, the closecode will be set to one of several well-known values such as:
 
-TBD: define the CBACC oversubscription threshold model for the browser.
+* `MulticastReceiver.FLOW_PROBLEM`: There was a problem with the multicast flow itself. For example:
+  * DORMS could not identify a multicast flow on the given source and group.
+  * The multicast flow had a higher bandwidth than announced by DORMS.
+  * Multicast packets were received but could not be authenticated.
+* `MulticastReceiver.LOCAL_PROBLEM`: There was a problem on the local device that prevented reception of the multicast flow. For example:
+  * A socket to receive multicast on could not be created or was closed.
+* `MulticastReceiver.OVERSUBSCRIBED`: A CBACC oversubscription threshold (see below) was reached so the left the multicast flow or did not join it at all.
+
+TBD: In the current API, one packet is delivered at a time to JavaScript. This is similar to how datagrams work in [WebTransport](https://github.com/WICG/web-transport). We may want to deliver multiple packets at a time for performance reasons. We are currently working on profiling this in Chromium.
+
+TBD: It would be nice if JavaScript had access to precise timestamps for when packets are received by the OS or at least by the browser from the OS. This could allow JavaScript to implement protocols for detecting the amount of available bandwidth using mechanisms such as [pathchirp](http://www.spin.rice.edu/Software/pathChirp/) and/or [pathrate](https://www.cc.gatech.edu/~dovrolis/bw-est/pathrate.html). Do we want to support this? And if we do, what should the API look like? It seems like an extra field in the object returned by `read()` would be an obvious place. But this may not be compatible with the ReadableStream system. So we may need to wrap the UInt8Array with the packet content in an extra object?
+
+TBD: Define the CBACC oversubscription threshold model for the browser.
 The rough initial idea is to start with a threshold at ~1mbps, grow if it's
 succeeding without loss, and shrink if loss goes persistently high.
 
-TBD: detailed design.  This early draft is intended to solicit community
+TBD: We may want to extend the API such that the browser can inform JavaScript that a CBACC oversubscription threshold is about to be reached. This may allow JavaScript to decide which multicast flows to unsubscribe from rather than relying on the browser to select one or more flows and close them with an `MulticastReceiver.OVERSUBSCRIBED` closecode.
+
+TBD: If JavaScript is not reading any packets, should the browser close the multicast flow with a specific closecode? Related to this, should there be an API where JavaScript can set the maximum number of packets that can be queued up internally in the ReadableStream?
+
+TBD: Should the browser unsubscribe automatically from a multicast flow on which no data is received from the network? Most likely the answer is *no* as subscription to a multicast flow without data can be used to signal to the network that it may consider creating the flow.
+
+TBD: AMBI may give information about dropped packets. Do we want that information to be available in the API? Perhaps by the reading of a special packet that indicates one or more dropped packets.
+
+TBD: Detailed design.  This early draft is intended to solicit community
 feedback about whether this general approach is doomed for reasons not
 addressed in the IETF drafts, or whether attempting an implementation and
 filling out all the details will actually be deployable, once it all works.
 
+
 ## Alternative designs considered
-
-### Individual Payloads
-
-An early prototype for the API used a separate onmessage call per UDP
-packet, but at 10mbps this consumed 40% CPU in the renderer and 20% CPU
-in the browser process on a Macbook Pro, so the new API will batch the
-payloads, with a cap on the event rate to decide how many packets to batch.
 
 ### Specific Protocols
 
