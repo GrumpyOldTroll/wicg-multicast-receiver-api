@@ -211,7 +211,7 @@ provide a safe core architecture, and to be adequate on their own for
 solutions to scalability problems where network support for multicast is
 enabled, and for use cases where the achievable latency is acceptable.
 
-### Details
+### JavaScript API
 
 Here is an example that joins a multicast flow for 20 seconds.
 
@@ -272,6 +272,35 @@ In case the promise returned by `read()` is rejected, it will be rejected with a
   * A socket to receive multicast on could not be created or was closed.
 * `MulticastReceiver.OVERSUBSCRIBED`: A CBACC oversubscription threshold (see below) was reached so the left the multicast flow or did not join it at all.
 
+### Getting DORMS metadata
+
+Consider the subscription to the multicast flow from the example in the previous section:
+
+```javascript
+{
+  source: '198.51.100.10',
+  group: '232.10.10.1',
+  port: 5001,
+  dorms: 'dorms.example.com'
+};
+```
+
+Here `dorms.example.com` is a domain name and an optional port (default is 443) where the browser will try to get metadata for the multicast flow with HTTPS as described in the DORMS specification. Among other things, this metadata must include the trust anchor used by AMBI to perform integrity checks on the multicast flow. When downloading the metadata, the browser will verify that the server presents a valid certificate for `dorms.example.com`. This ensures that a chain of trust is established from the JavaScript that subscribes to a multicast flow and to the integrity checks the browser performs using AMBI.
+
+We also want to ensure that the browser only subscribes to a multicast flow which wants to be subscribed to by a browser. This is to prevent for example:
+
+* A malicious website to subscribe to a multicast flow private to a network.
+* A pirate website to subscribe to a multicast flow from a normal website.
+
+There are two mechanisms in place to prevent this:
+
+* When downloading DORMS metadata with HTTPS, the browser will perform [CORS](https://fetch.spec.whatwg.org/#http-cors-protocol) checks.
+* The DORMS server provided by JavaScript needs to be the same identified by the DORMS reverse-DNS scheme described in the DORMS specification (see next paragraph).
+
+The second bullet ensures that JavaScript can only subscribe to a multicast flow from a given source IP if the reverse DNS of that source IP has been setup to allow it. More precisely, when receiving the multicast subscription in our example, the browser will make a reverse-DNS lookup for a `SRV` record for the domain `_dorms._tcp.10.100.51.198.in-addr.arpa`. In order for the subscription to succeed, this must give a `SRV` record with the hostname `dorms.example.com` and port 443. A different port can be used if provided in the JavaScript API as well. Obviously, DNS is usually not considered secure, so in some cases it may be possible to hack DNS to circumvent this check. This problem may need further considerations.
+
+### TBDs
+
 TBD: In the current API, one packet is delivered at a time to JavaScript. This is similar to how datagrams work in [WebTransport](https://github.com/WICG/web-transport). We may want to deliver multiple packets at a time for performance reasons. We are currently working on profiling this in Chromium.
 
 TBD: It would be nice if JavaScript had access to precise timestamps for when packets are received by the OS or at least by the browser from the OS. This could allow JavaScript to implement protocols for detecting the amount of available bandwidth using mechanisms such as [pathchirp](http://www.spin.rice.edu/Software/pathChirp/) and/or [pathrate](https://www.cc.gatech.edu/~dovrolis/bw-est/pathrate.html). Do we want to support this? And if we do, what should the API look like? It seems like an extra field in the object returned by `read()` would be an obvious place. But this may not be compatible with the ReadableStream system. So we may need to wrap the UInt8Array with the packet content in an extra object?
@@ -292,7 +321,6 @@ TBD: Detailed design.  This early draft is intended to solicit community
 feedback about whether this general approach is doomed for reasons not
 addressed in the IETF drafts, or whether attempting an implementation and
 filling out all the details will actually be deployable, once it all works.
-
 
 ## Alternative designs considered
 
