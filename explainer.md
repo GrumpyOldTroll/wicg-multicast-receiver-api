@@ -7,58 +7,58 @@ scale is not keeping up with demand.
 
 ### Scaling Problem Examples
 
-An example walkthrough with some real-world numbers was [presented](https://yana.techark.org/wp-content/uploads/2019/04/ietf104-vig-multicast-video.pdf) at
-an IETF side meeting in 2019.  The arithmetic is simple, and reproduced here.
+A few different presentations have addressed the scaling problem that can be solved by multiast, but we'll refer here to some real-world numbers presented at NANOG 79:
 
-As an example for a sense of scale, we'll use the following value as a
-high end for an achievable bit-rate for delivering popular traffic:
+ * [video](https://www.youtube.com/watch?v=2aihLUb1elg&t=4m56s)
+ * [slides](https://storage.googleapis.com/site-media-prod/meetings/NANOG79/2209/20200530_Holland_Ip_Multicast_Next_v1.pdf#page=5)
 
- * `72 tbps`: new record peak traffic delivery to end users, announced [December 2018](https://www.akamai.com/us/en/about/news/press/2018-press/akamai-hits-new-high-for-peak-web-traffic-delivered.jsp) by Akamai.
+NB: The presentation used [mistaken numbers](https://github.com/GrumpyOldTroll/wicg-multicast-receiver-api/issues/2) for video bitrate estimates, corrected below, but the overall point still holds.  The arithmetic is simple.
+
+ * `167 tbps`: new record peak traffic delivery to end users, announced [April 2020](https://news.mit.edu/2020/3-questions-tom-leighton-managing-covid-19-internet-traffic-surge-0427) by Akamai.
 
 #### Linear Media Delivery
 
 Using these values:
 
- * **40 mbps**: bit-rate for 4k video
- * **10 mbps**: bit-rate for 1080p video
+ * **20 mbps**: bit-rate for 4k video
+ * **5 mbps**: bit-rate for 1080p video
 
 Example reachable audience sizes:
 
- * **1.8m users** = 72 tbps / (40mbps / end user)
- * **7.2m users** = 72 tbps / (10mbps / end user)
+ * **8.35m users** = 167 tbps / (20mbps / end user)
+ * **33.5m users** = 167 tbps / (5mbps / end user)
 
-For comparison, audience sizes of popular content:
+For comparison, audience sizes of popular events:
 
 Overall viewership:
 
  * 500m = Fifa World Cup Finals, 2018
- * 200m-300m = Cricket World Cup 2015 (when India is playing)
+ * 200m-300m = Cricket World Cup 2015 (whenever India is playing)
  * 100m = Super Bowl 2019
 
 Online Viewership: 
 
- * 4m viewers = Twitch concurrent viewers [all time peak](https://twitchtracker.com/statistics)
- * 9m viewers = 2018 World Cup [peak concurrent viewers](https://www.conviva.com/peak-concurrent-plays-broke-records-world-cup-finals/)
+ * 6m viewers = Twitch concurrent viewers [all time peak](https://twitchtracker.com/statistics) in June 2020 (as of December 2020)
+ * 9m viewers = 2018 World Cup [peak concurrent online viewers](https://www.conviva.com/peak-concurrent-plays-broke-records-world-cup-finals/)
 
-What _is_ achievable?:
+What *is* achievable in 4k as a maximum upper bound?:
 
- * Most popular 2017-2018 Nielsen show with <1.8m viewers is ranked **#179**
- * Most popular 2017-2018 Nielsen show with <7.2m viewers is ranked **#56**
+ * Most popular 2017-2018 Nielsen show with \<8.3m viewers is ranked **#43** ("Scorpion")
 
 When one of the largest providers on the Internet can only handle the
-179th-most popular TV show (doing nothing else) before setting a
-new record for traffic, because of the Internet's unicast delivery model,
+43rd-most popular TV show with no extra capacity before setting a
+new record for traffic because of the Internet's unicast delivery model,
 the Internet is really not living up to its potential.
 
 #### Downloads
 
-Consider a 1GB OS upgrade that has to be delivered to 1b devices.  What's
+Consider a 2GB OS upgrade that has to be delivered to 1b devices.  What's
 the average delivery time at a high-end peak delivery rate?
 
- * **1.3 days** = 1GB * 1b devices / 72 Tbps
+ * **1.1 days** = 2GB * 1b devices / 167 Tbps
 
 Consider also that some OS or app updates are over **10GB**, and therefore
-would take over **13 days** to deliver to 1b users, at a record-setting
+would take over **11 days** to deliver to 1b users, at a record-setting
 aggregate delivery rate, doing nothing else.  (Sure hope there's no urgent
 security updates!)
 
@@ -96,16 +96,15 @@ them sometimes.)
 
 ## Non-goals
 
- * Sending.  This API does not do any outbound data traffic.
+ * Sending.  This API does not do any outbound data traffic.  The functions in this API invoke a few outbound packets with IGMP or MLD, plus some other signaling protocols defined in the IETF's RFC series, but provides no capability to create app-controllable outbound traffic, outside of the specific narrow signaling to join multicast groups and process their traffic.
 
  * ASM (Any-Source Multicast).  This proposal only permits use of
    [SSM](https://tools.ietf.org/html/rfc4607) (Source Specific Multicast).
-   (Note: A work-in-progress effort in the IETF is under way to
-   [deprecate ASM for interdomain multicast](https://datatracker.ietf.org/doc/draft-ietf-mboned-deprecate-interdomain-asm/).)
+   (NB: [RFC 8815](https://tools.ietf.org/html/rfc8815) deprecated interdomain multicast using ASM)
 
- * Secrecy within your local network.
+ * Privacy and Secrecy within your local network.
 
-   Your IGMP or MLD membership report goes on the LAN, to a local
+   As a receiver, your IGMP or MLD membership report goes on the LAN, to a local
    network that can see your machine's IP and MAC address.
 
    The network is replicating the packets, and they know the global IP
@@ -139,11 +138,11 @@ them sometimes.)
 
    That said, the data could for example be built out of encrypted
    segments, and the receiver could construct those segments and feed them
-   into a player that provides its own guarantees about key control.
+   into a player that provides its own guarantees about key control, as many existing DRM systems do.
 
-   Nothing prevents the data from being encrypted, it is entirely
-   possible and likely for some use cases.  But nothing in this
-   architecture provides or requires encryption for the transported data.
+   Nothing prevents the data from being encrypted, it is entirely possible and likely for some use cases.
+   But nothing in this architecture provides or requires encryption for the transported data.
+   This spec provides authenticated UDP payloads to the web app, and a different layer would have to understand the content of those payloads (including whether they hold encrypted data).
 
 ## Proposed Solution
 

@@ -1,0 +1,316 @@
+<!doctype html> 
+<html lang="en"> 
+  
+<head>
+  <meta charset="utf-8">
+
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+
+  <title>MulticastReceive API Demo</title> 
+  <meta name="description" content="MulticastReceive API Demo">
+  <meta name="author" content="Jake Holland, Akamai">
+</head> 
+
+<body> 
+  <div class="container pt-4">
+    <table class="table table-bordered"> 
+      <thead>
+        <tr> 
+          <th>
+            <p>
+              <form id="newSG">
+                <input type="text" id="source" name="source" required />
+                <label for="source">Source IP</label><br>
+                <input type="text" id="group" name="group" required />
+                <label for="group">Group IP</label><br>
+                <input type="number" id="port" name="port" min="0" max="65535" required />
+                <label for="group">UDP Port</label><br>
+                <input type="text" id="dorms" name="dorms" />
+                <label for="group"><a href="https://datatracker.ietf.org/doc/draft-ietf-mboned-dorms/">DORMS</a> server</label><br>
+                <button class="btn btn-md btn-primary" id="addSG" type="button">Add SG</button> 
+              </form>
+            </p>
+          </th>
+          <th>
+            <p id="unified_parse_msg">
+            </p>
+            <p>
+              <form id="newSG2">
+                <input type="text" id="unified" name="unified" style="width:100%;" required /><br>
+                <label for="unified">(SourceIP-&gt;GroupIP):Port/DORMS</label><br>
+                <button class="btn btn-md btn-primary" id="addSG2" type="button">Add SG</button> 
+              </form>
+            </p>
+          </th>
+        </tr>
+      </thead>
+    </table>
+    <div class="table-responsive"> 
+      <table class="table table-bordered"> 
+        <thead> 
+          <tr> 
+            <th class="text-center">#</th> 
+            <th class="text-center">Multicast Stream: (S-&gt;G):P/<a href="https://datatracker.ietf.org/doc/draft-ietf-mboned-dorms/">DORMS</a></th>
+            <th class="text-center">Status</th> 
+            <th class="text-center" style="width: 40%">Stats</th> 
+            <th class="text-center">Action</th> 
+          </tr> 
+        </thead> 
+        <tbody id="tbody"> 
+  
+        </tbody> 
+      </table> 
+    </div> 
+  </div> 
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.5.4/cjs/popper.min.js" integrity="sha512-YkvvvLP0SjafLCwkAhnVPKeGhgAFDrhmXiOAc3ifNVYaIIT4P5x/oazqcXxVVhebJ3+lNHv0dSdq1X2HTdRQpg==" crossorigin="anonymous"></script>
+  <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.6.0/cjs/popper.min.js" integrity="sha512-Wolz9yzdoTL6avwJTzh/0yUSqZ458EVnKgsAnOCs1H+A3VEtGDvPvD0klPKU5TkZ3BfnFPcxmr74S/YiPiTNBA==" crossorigin="anonymous"></script> -->
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI" crossorigin="anonymous"></script>
+
+  <script> 
+    $(document).ready(function () { 
+  
+      // An ID
+      let nextId = 1;
+      let receivers = {};
+      let currentlyJoined = 0;
+      let statsUpdateInterval = null;
+
+      let add_sg_fn = function(data) {
+        let myIdInt = nextId++;
+        let myId=`MR${myIdInt}`;
+
+        // Adding a row inside the tbody. 
+        $('#tbody').append(`<tr id="${myId}"> 
+             <td class="row-index text-center"> 
+               <p>${myIdInt}</p> 
+             </td> 
+             <td class="row-sg text-center"> 
+   <p>(${data["source"]}-&gt;${data["group"]}):${data["port"]}/${data["dorms"]}</p> 
+             </td> 
+             <td class="row-status text-center"> 
+                 <p>not started</p> 
+             </td> 
+             <td class="row-stats text-left"> 
+                 <p></p> 
+             </td> 
+             <td class="actions text-center"> 
+               <button class="btn btn-primary btn-sm join"
+                  type="button">Join</button> 
+               <button class="btn btn-secondary btn-sm disabled leave"
+                  type="button">Leave</button> 
+               <button class="btn btn-danger btn-sm remove"
+                  type="button">Remove</button> 
+             </td> 
+           </tr>`); 
+          receivers[myId] = {
+              id: myId,
+              config: data,
+              stats: {
+                  packets: 0,
+                  bytes: 0,
+                  join_time: null,
+                  first_rx: null,
+                  last_error: '',
+                  bytes_ring: [0,0,0,0,0,0,0,0,0,0,0],
+                  pkts_ring: [0,0,0,0,0,0,0,0,0,0,0],
+                  ring_idx: 0,
+                  loc: $(`#${myId}`).children('.row-stats').children('p')
+                },
+              reader: null
+            };
+      }
+
+      // (23.212.185.5->232.1.1.1):5001/disrupt-dorms.edgesuite.net
+      // (2600:14e0::5->ff3e::8000:0001):5001/disrupt-dorms.edgesuite.net
+      let unified_reg = /^\s*\(([^-]+)->([^\)]+)\)\s*:\s*(\d+)\s*\/\s*(\S*)\s*$/;
+
+      let parse_unified = function(unified) {
+        let out = {};
+
+        let m = unified_reg.exec(unified);
+        // let m = unified.match(unified_reg);
+        if (m === null) {
+          console.log(`rejected unified str "${unified}" for failing regex match`);
+          return null;
+        }
+        if (m[4] === undefined) {
+          console.log(`rejected unified str "${unified}" for not having all groups`);
+          return null;
+        }
+
+        let portstr = m[3];
+
+        let port = 0;
+        port = parseInt(portstr, 10);
+
+        if (port < 0 || port > 65535) {
+          console.log(`rejected unified str "${unified}" with port ${port} outside 0-65535`);
+          return null;
+        }
+
+        out.source = m[1].trim();
+        out.group = m[2].trim();
+        out.port = port;
+        out.dorms = m[4].trim();
+
+        return out;
+      }
+
+      let stats_text = function(stats) {
+        let tail_idx = (stats.ring_idx + 1) % 11;
+        let ring_bytes = stats.bytes_ring[stats.ring_idx] - stats.bytes_ring[tail_idx];
+        let ring_pkts = stats.pkts_ring[stats.ring_idx] - stats.pkts_ring[tail_idx]
+            return `lifetime:<br>  ${(stats.bytes/1000000.0).toPrecision(3)}MB<br>  ${stats.packets} pkts<br>last 10s:<br>  ${(ring_bytes*8/10000.0).toPrecision(1)}kbps<br>  ${ring_pkts/10.0}pps`;
+      }
+
+      let update_all_stats = function () {
+        for (const [ key, val ] of Object.entries(receivers)) {
+          val.stats.ring_idx = (val.stats.ring_idx + 1) % 11;
+          val.stats.bytes_ring[val.stats.ring_idx] = val.stats.bytes;
+          val.stats.pkts_ring[val.stats.ring_idx] = val.stats.packets;
+          val.stats.loc.html(stats_text(val.stats));
+        }
+      }
+
+      // jQuery button click event to add a row 
+      $('#addSG').on('click', function () { 
+        let data = $('#newSG').serializeArray().reduce(function(obj, item) {
+            obj[item.name] = item.value;
+            return obj;
+        }, {});
+        add_sg_fn(data);
+      }); 
+      $('#addSG2').on('click', function () { 
+        let unified = $('#unified').val();
+        let data = parse_unified(unified);
+        if (data === null || data === undefined) {
+          $('#unified_parse_msg').html(`failed parsing "${unified}" (see console log)`);
+          return;
+        }
+        $('#unified_parse_msg').html('');
+        add_sg_fn(data);
+      }); 
+      // jQuery button click event to remove a row. 
+      $('#tbody').on('click', '.remove', function () { 
+  
+        // Getting all the rows next to the row 
+        // containing the clicked button
+        let row = $(this).closest('tr');
+        let myId = row.attr('id');
+        let holder = receivers[myId];
+        if (holder.reader !== null) {
+          sg = row.children('.row-sg').children('p').text();
+              console.log(`left ${sg} when removing joined row ${myId}`);
+          holder.reader.cancel();
+        }
+        row.remove();
+      }); 
+      $('#tbody').on('click', '.leave', function () { 
+        let row = $(this).closest('tr'); 
+        let status_loc = row.children('.row-status').children('p');
+        let myId = row.attr('id');
+        let holder = receivers[myId];
+        if (holder.reader === null) {
+          console.log(`${myId} already not joined, ignoring leave`);
+          return;
+        }
+        status_loc.prepend('(leaving @{new Date().toLocaleTimeString()})...');
+        holder.reader.cancel();
+      });
+      $('#tbody').on('click', '.join', function () { 
+        let row = $(this).closest('tr'); 
+        let status_loc = row.children('.row-status').children('p');
+        let myId = row.attr('id');
+        let holder = receivers[myId];
+        if (holder.reader !== null) {
+          console.log(`${myId} already joined, ignoring join`);
+          return;
+        }
+        let conf = holder.config;
+        try {
+          //if (typeof(conf) != "MulticastReceiverConfig")
+          if (false) {
+            // it's originally built in a generic object, so put it in a
+            // MulticastReceiverConfig.
+            // jake 2020-12: except don't because this actually just uses a generic object at present and MulticastReceiverConfig isn't defined, it seems.
+            let mrConf = new MulticastReceiverConfig();
+            mrConf.source = conf.source;
+            mrConf.group = conf.group;
+            mrConf.port = conf.port;
+            mrConf.dorms = conf.dorms;
+            holder.config = mrConf;
+            conf = mrConf;
+          }
+          let mr = new MulticastReceiver(conf);
+          holder.reader=mr.readable.getReader();
+        } catch (err) {
+          status_loc.html(`error: ${err.message}`);
+          return;
+        }
+        let actions = row.children('.actions');
+        let join_button = actions.children('.join');
+        let leave_button = actions.children('.leave');
+        join_button.removeClass('btn-primary');
+        join_button.addClass('btn-secondary');
+        join_button.addClass('disabled');
+        leave_button.removeClass('btn-secondary');
+        leave_button.removeClass('disabled');
+        leave_button.addClass('btn-primary');
+        if (currentlyJoined == 0 && statsUpdateInterval === null) {
+          statsUpdateInterval = setInterval(update_all_stats, 1000);
+        }
+        let stats = holder.stats;
+        stats.join_time = new Date();
+        status_loc.html(`join attempted at ${stats.join_time.toLocaleTimeString()}`);
+        currentlyJoined++;
+        async function readData() {
+          let stats = holder.stats;
+          let { done, value } = await holder.reader.read();
+          if(done) {
+            status_loc.html(`closed internally after ${new Date().getTime()-stats.join_time.getTime()}ms`);
+            return;
+          }
+          stats.first_rx = new Date();
+          status_loc.html(`receiving data since ${stats.first_rx.toLocaleTimeString()} (after ${stats.first_rx.getTime()-stats.join_time.getTime()}ms join)`);
+          while (true) {
+            if(done) {
+              status_loc.html('closed internally');
+              return;
+            }
+            // value is an UInt8Array with the payload of one UDP packet.
+            stats.packets++;
+            stats.bytes += value.length;
+            ({ done, value } = await holder.reader.read());
+          }
+        }
+        readData().then( () => {
+          status_loc.html(`left at ${new Date().toLocaleTimeString()}`);
+        }).catch( error => {
+          status_loc.html(`error (closed at ${new Date().toLocaleTimeString()} with ${holder.reader.closecode}): ${error.message}`);
+        }).finally ( () => {;
+          now=new Date();
+          dur = (now.getTime() - stats.join_time.getTime())/1000.0;
+              status_loc.append(` after ${dur}s (including join delay of ${(stats.first_rx.getTime()-stats.join_time.getTime())/1000.0}), having received ${stats.packets} packets containing ${stats.bytes} payload bytes`);
+          currentlyJoined--;
+          if (currentlyJoined == 0 && statsUpdateInterval !== null) {
+            clearInterval(statsUpdateInterval);
+            statsUpdateInterval = null;
+          }
+          stats.packets = 0;
+          stats.bytes = 0;
+          holder.reader = null;
+          join_button.removeClass('btn-secondary');
+          join_button.removeClass('disabled');
+          join_button.addClass('btn-primary');
+          leave_button.removeClass('btn-primary');
+          leave_button.addClass('btn-secondary');
+          leave_button.addClass('disabled');
+        });
+      });
+    }); 
+  </script> 
+</body> 
+</html> 
+
