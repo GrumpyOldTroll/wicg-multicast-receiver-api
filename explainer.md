@@ -170,7 +170,7 @@ metadata to ensure network safety.)
 
  * DORMS (Discovery Of RESTCONF Metadata for SSM):
 
-   [draft-jholland-mboned-dorms](https://datatracker.ietf.org/doc/draft-jholland-mboned-dorms/)
+   [draft-ietf-mboned-dorms](https://datatracker.ietf.org/doc/draft-ietf-mboned-dorms/)
 
    This defines a mechanism for the metadata to get discovered and
    delivered to the browser and the network.  (It uses
@@ -181,7 +181,7 @@ metadata to ensure network safety.)
 
  * AMBI (Asymmetric Manifest-Based Integrity):
 
-   [draft-jholland-mboned-ambi](https://datatracker.ietf.org/doc/draft-jholland-mboned-ambi/)
+   [draft-ietf-mboned-ambi](https://datatracker.ietf.org/doc/draft-ietf-mboned-ambi/)
 
    This is how the browser verifies the integrity of the data received
    and gets the information to monitor packet loss, without needing to
@@ -191,7 +191,7 @@ metadata to ensure network safety.)
 
  * CBACC (Circuit Breaker Assisted Congestion Control):
 
-   [draft-jholland-mboned-cbacc](https://datatracker.ietf.org/doc/draft-jholland-mboned-cbacc/)
+   [draft-ietf-mboned-cbacc](https://datatracker.ietf.org/doc/draft-ietf-mboned-cbacc/)
 
    This is how the browser (and the network) ensure that capacity
    limits are not exceeded.  This defines the behavior both for a
