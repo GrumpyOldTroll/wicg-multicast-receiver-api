@@ -308,6 +308,8 @@ TBD: Define the CBACC oversubscription threshold model for the browser.
 The rough initial idea is to start with a threshold at ~1mbps, grow if it's
 succeeding without loss, and shrink if loss goes persistently high.
 
+TBD: add api extensions for loss rate reporting ahead of cbacc+ambi-based cutoff.  need some kind of early warning from stats.
+
 TBD: We may want to extend the API such that the browser can inform JavaScript that a CBACC oversubscription threshold is about to be reached. This may allow JavaScript to decide which multicast flows to unsubscribe from rather than relying on the browser to select one or more flows and close them with an `MulticastReceiver.OVERSUBSCRIBED` closecode.
 
 TBD: If JavaScript is not reading any packets, should the browser close the multicast flow with a specific closecode? Related to this, should there be an API where JavaScript can set the maximum number of packets that can be queued up internally in the ReadableStream?
