@@ -1,0 +1,4 @@
+title: Multicast Receive API Proposal
+description: proposal to add a generic multicast receive API to web browsers.
+remote_theme: pmarsceill/just-the-docs
+color_scheme: dark
